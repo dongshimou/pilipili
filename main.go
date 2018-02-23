@@ -3,8 +3,8 @@ package main
 import (
 	"compress/flate"
 	"compress/gzip"
+	"errors"
 	"fmt"
-	"github.com/murlokswarm/errors"
 	"github.com/smallnest/goreq"
 	"io"
 	"io/ioutil"
@@ -17,6 +17,7 @@ import (
 	"time"
 	"os"
 	"encoding/xml"
+	"encoding/json"
 	"regexp"
 )
 
@@ -188,7 +189,7 @@ type Xml_video_durl struct {
 type Xml_video_url struct {
 	Url string `xml:"url"`
 }
-func B_get_flvurl(cid,av string)(string,error){
+func B_get_flvurl(cid,av string,bangumi bool)(string,error){
 /*  //V2版本的方法 sign错误
 	//base_url:="https://interface.bilibili.com/v2/playurl"
 	//app_key:="f3bb208b3d081dc8"
@@ -216,13 +217,24 @@ func B_get_flvurl(cid,av string)(string,error){
 		"quality":"0",
 		"ts":B_tostring(time.Now().Unix()),
 	}
-	base_url:="http://interface.bilibili.com/playurl"
 
 	referer_url:=fmt.Sprintf("https://www.bilibili.com/video/%s/",av)
 
-	app_secret:="1c15888dc316e05a15fdd0a02ed6584f"
-	query,sign:=B_EncodeSign(param,app_secret)
-	last_url:=base_url+"?"+query+"&sign="+sign
+	app_bangumi_secret:="9b288147e5474dd2aa67085f716c560d"
+	app_normal_secret:="1c15888dc316e05a15fdd0a02ed6584f"
+
+	last_url:=""
+	if(bangumi){
+		base_url:="http://bangumi.bilibili.com/player/web_api/playurl"
+		param["module"]="bangumi"
+		query,sign:=B_EncodeSign(param,app_bangumi_secret)
+		last_url=base_url+"?"+query+"&sign="+sign		
+	}else{
+		base_url:="http://interface.bilibili.com/playurl"
+		query,sign:=B_EncodeSign(param,app_normal_secret)
+		last_url=base_url+"?"+query+"&sign="+sign
+	}
+	log.Println("last url: ",last_url)
 
 	/*
 	//goreq 库存在bug
@@ -233,7 +245,6 @@ func B_get_flvurl(cid,av string)(string,error){
 	SetHeader("User-Agent",user_agent).
 	SetHeader("Connection","close").
 	Get(last_url).End()
-	log.Println("last url: ",last_url)
 	if errs!=nil{
 	}
 	*/
@@ -244,7 +255,6 @@ func B_get_flvurl(cid,av string)(string,error){
 	req.Header.Add("User-Agent",user_agent)
 	client := &http.Client{}
 	resp,err:=client.Do(req)
-	log.Println("last url: ",last_url)
 	if err!=nil{
 
 	}
@@ -255,7 +265,7 @@ func B_get_flvurl(cid,av string)(string,error){
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 
-	//log.Println(string(body))
+	// log.Println(string(body))
 
 	xml_res:=Xml_video_Res{}
 	err=xml.Unmarshal(body,&xml_res)
@@ -265,6 +275,9 @@ func B_get_flvurl(cid,av string)(string,error){
 	}
 	//log.Println(xml_res.Durl.Url)
 	download:=xml_res.Durl.Url
+
+	return string(body),nil
+	
 	downflv:= func(){
 /*
 		//flash的源 rate=240000
@@ -273,6 +286,7 @@ func B_get_flvurl(cid,av string)(string,error){
 		//html的源 rete=0
 		download="http://upos-hz-mirrorkodo.acgvideo.com/upgcxcode/39/35/32253539/32253539-1-64.flv?e=ig8g5X10ugNcXBlqNxHxNEVE5XREto8KqJZHUa6m5J0SqE85tZvEuENvNC8xNEVE9EKE9IMvXBvE2ENvNCImNEVEK9GVqJIwqa80WXIekXRE9IMvXBvEuENvNCImNEVEua6m2jIxux0CkF6s2JZv5x0DQJZY2F8SkXKE9IB5to8euxZM2rNcNbUVhwdVhoM1hwdVhwdVNCM%3D&platform=pc&uipk=5&uipv=5&deadline=1519383359&gen=playurl&um_deadline=1519383359&rate=0&um_sign=30d0e864f9f0072c029831a475d46529&dynamic=1&os=kodo&oi=3030949926&upsig=d4d0701dcb7704638aec8f7edfcd13e5"
 */
+		log.Println("download url: ",download)
 		req,_:=http.NewRequest("GET",download,nil)
 		req.Header.Add("Referer",referer_url)
 		req.Header.Add("User-Agent",user_agent)
@@ -306,50 +320,82 @@ func B_get_flvurl(cid,av string)(string,error){
 	return string(body),nil
 }
 
+type Bangumi_epinfo struct{
+	Aid int64 `json:"aid"`
+	Cid int64 `json:"cid"`
+	Cover string `json:"cover"`
+	EpId string `json:"ep_id"`
+	EpisodeStatus int64 `json:"episode_status"`
+	From string `json:"from"`
+	Index string `json:"index"`
+	IndexTitle string `json:"index_title"`
+	Mid int64 `json:"mid"`
+	Page int64 `json:"page"`
+	Vid string `json:"vid"`
+}
 func main() {
 
 	url:="https://www.bilibili.com/video/av16968840/?spm_id_from=333.334.bili_douga.9"
 	url="https://www.bilibili.com/bangumi/play/ep183836"
-	get_av:= func(url string)string {
+	aid:=""
+	cid:=""
+	av:=""
+	var err error
+	get_av:= func(url string){
 		if strings.Index(url,"bangumi")>=0{
-
 			resp,err:=http.Get(url)
 			if err!=nil{
-				return ""
+				log.Println(err.Error)
+				return
 			}
 			defer resp.Body.Close()
 			body, err := ioutil.ReadAll(resp.Body)
-			//log.Println(string(body))
+			// log.Println(string(body))
 
-			//"aid": 18221694, "cid": 29749244,
 			//正则匹配吧
-			reg:=regexp.MustCompile(`"aid": ([0-9]+)`)
-			result:=string(reg.Find(body))
-			return "av"+strings.TrimLeft(result,`"aid": `)
+			reg:=regexp.MustCompile(`"epInfo":{.*?}`)
+			result:=reg.Find(body)
+			// log.Println(string(result))
+			//去掉 "epInfo": 9个
+			result=result[9:]
+			epinfo:=Bangumi_epinfo{}
+			err=json.Unmarshal(result,&epinfo)
+			// log.Println(epinfo)
+			if err!=nil{
+				log.Println(err.Error)
+				return
+			}
+			aid:=B_tostring(epinfo.Aid)
+			av="av"+aid
 		}else{
 			reg := regexp.MustCompile(`av([0-9]+)`)
-			return string(reg.Find([]byte(url)))
+			av= string(reg.Find([]byte(url)))
+			aid=strings.TrimLeft(av,"av")
 		}
 	}
 
-	//av:="av19780254"
-
-	av:=get_av(url)
+	get_av(url)
 	//通过av号获取cid
-	cid, err := B_get_cid(av)
-	if err != nil {
-
+	if(aid==""){
+		log.Println("获取aid失败")
+		return
+	}
+	if cid==""{
+	cid, err = B_get_cid(av)
+		if err != nil {
+			return
+		}
 	}
 	//通过cid获取弹幕xml
 	danmu, err := B_get_danmu(cid)
 	if err != nil {
-
+		return
 	}
 	log.Println(danmu)
 	//获取视频源地址失败
-	flvurl,err:=B_get_flvurl(cid,av)
+	flvurl,err:=B_get_flvurl(cid,av,true)
 	if err!=nil{
-
+		return
 	}
 	log.Println(flvurl)
 }
