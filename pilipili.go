@@ -19,7 +19,7 @@ import (
 	"sort"
 	"strings"
 	"time"
-	"./pilipili"
+	"./tool"
 )
 
 type Get_Res_Template struct {
@@ -308,7 +308,7 @@ func B_download_flv(av,title,flvxml string){
 		}
 		sort.Ints(order)
 
-		go pilipili.B_send_flv_heart(xml_res.Timelength)
+		go tool.B_send_flv_heart(xml_res.Timelength)
 
 		//下载分段并合并
 		for _, v := range order {

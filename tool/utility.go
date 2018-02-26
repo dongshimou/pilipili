@@ -1,4 +1,4 @@
-package pilipili
+package tool
 
 import (
 	"fmt"

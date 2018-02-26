@@ -1,4 +1,4 @@
-package pilipili
+package tool
 
 type Bangumi_epinfo struct {
 	Aid           int64  `json:"aid"`
