@@ -1,39 +1,51 @@
 package tool
 
 import (
-	"strings"
-	"net/http"
-	"io/ioutil"
-	"regexp"
-	"log"
 	"encoding/json"
-	"github.com/smallnest/goreq"
-	"errors"
-	"os"
-	"sort"
-	"fmt"
-	"time"
-	"io"
 	"encoding/xml"
+	"errors"
+	"fmt"
+	"github.com/smallnest/goreq"
+	"io"
+	"io/ioutil"
+	"log"
+	"net/http"
+	"os"
+	"regexp"
+	"sort"
+	"strings"
+	"sync/atomic"
+	"time"
 )
 
-var (
-	title=""
-	aid = ""
-	cid = ""
-	sid=""
-	av = ""
-	mid=""
-	epid=""
-	bangumi=false
-	referer_url=""
-	user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.84 Safari/537.36"
+type pilipili struct {
+	title       string
+	aid         string
+	cid         string
+	sid         string
+	av          string
+	mid         string
+	epid        string
+	bangumi     bool
+	referer_url string
+	pili_err    error
+}
+
+const (
+	heart_sleep = 15
+	user_agent  = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.84 Safari/537.36"
 )
 
-const(
-	heart_sleep=15
-)
-func get_some_id(url string) {
+func PiliPili() *pilipili {
+	b := pilipili{}
+	b.bangumi = false
+	b.pili_err = nil
+	return &b
+}
+func (b *pilipili) GetError() error {
+	return b.pili_err
+}
+func (b *pilipili) getSomeId(url string) {
 
 	resp, err := http.Get(url)
 	if err != nil {
@@ -45,7 +57,7 @@ func get_some_id(url string) {
 	// log.Println(string(body))
 
 	if strings.Index(url, "bangumi") >= 0 {
-		bangumi=true
+		b.bangumi = true
 		//正则匹配吧
 		reg := regexp.MustCompile(`"epInfo":{.*?}`)
 		result := reg.Find(body)
@@ -59,34 +71,34 @@ func get_some_id(url string) {
 			log.Println(err.Error)
 			return
 		}
-		aid = B_tostring(epinfo.Aid)
-		av = "av" + aid
-		cid = B_tostring(epinfo.Cid)
-		mid=B_tostring(epinfo.Mid)
-		epid=B_tostring(epinfo.EpId)
+		b.aid = B_tostring(epinfo.Aid)
+		b.av = "av" + b.aid
+		b.cid = B_tostring(epinfo.Cid)
+		b.mid = B_tostring(epinfo.Mid)
+		b.epid = B_tostring(epinfo.EpId)
 
 		//"ssId":21603
-		reg=regexp.MustCompile(`"ssId":[0-9]*`)
-		result=reg.Find(body)
-		result=result[7:]
-		sid=string(result)
-		log.Println(sid)
+		reg = regexp.MustCompile(`"ssId":[0-9]*`)
+		result = reg.Find(body)
+		result = result[7:]
+		b.sid = string(result)
+		log.Println(b.sid)
 	} else {
 		reg := regexp.MustCompile(`av([0-9]+)`)
-		av = string(reg.Find([]byte(url)))
-		aid = strings.TrimLeft(av, "av")
+		b.av = string(reg.Find([]byte(url)))
+		b.aid = strings.TrimLeft(b.av, "av")
 	}
 
-	title_reg:=regexp.MustCompile(`<title>.*?</title>`)
-	title=string(title_reg.Find(body))
-	title=strings.TrimLeft(title,`<title>`)
-	title=strings.TrimRight(title,`</title>`)
+	title_reg := regexp.MustCompile(`<title>.*?</title>`)
+	b.title = string(title_reg.Find(body))
+	b.title = strings.TrimLeft(b.title, `<title>`)
+	b.title = strings.TrimRight(b.title, `</title>`)
 
 }
-func B_get_cid() (string, error) {
+func (b *pilipili) getCid() (string, error) {
 	getcid_url := "https://api.bilibili.com/x/player/pagelist"
 	last_url := B_build_url(getcid_url, map[string]string{
-		"aid": strings.Replace(aid, "av", "", -1),
+		"aid": strings.Replace(b.aid, "av", "", -1),
 	})
 	res_body := Get_Cid_Res{}
 	resp, _, errs := goreq.New().Get(last_url).BindBody(&res_body).End()
@@ -120,108 +132,124 @@ type Xml_danmaku_d struct {
 	Text string `xml:",chardata"`
 }
 
-func B_get_danmu() (string, error) {
+func (b *pilipili) DownloadDanmaku() {
+	f, err := os.Create(fmt.Sprintf("%s.xml", b.title))
+	if err != nil {
+		log.Println("create error")
+		b.pili_err = errors.New("创建下载文件失败")
+		return
+	}
+	raw, err := b.getDanmaku()
+	if err != nil {
+		b.pili_err = err
+		return
+	}
+	f.Write(raw)
+	f.Close()
+}
+
+func (b *pilipili) getDanmaku() ([]byte, error) {
 	get_danmu_url := "https://comment.bilibili.com/%s.xml"
-	last_url := fmt.Sprintf(get_danmu_url, cid)
+	last_url := fmt.Sprintf(get_danmu_url, b.cid)
 
 	resp, err := http.Get(last_url)
 	if err != nil {
-		return "", errors.New("https error")
+		return nil, errors.New("https error")
 	}
 	if resp.StatusCode != http.StatusOK {
-		return "", errors.New("https status code is not equal 200")
+		return nil, errors.New("https status code is not equal 200")
 	}
 	// Content-Encoding: deflate
 	res, err := B_flate_decode(resp.Body)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	xml_res := Xml_danmaku_Res{}
 	err = xml.Unmarshal(res, &xml_res)
 	if err != nil {
 		log.Println("弹幕 xml 解析错误")
-		return "", errors.New("弹幕 xml 解析错误")
+		return nil, errors.New("弹幕 xml 解析错误")
 	}
-	return string(res), nil
+	return res, nil
 }
 
-func B_send_flv_heart(length int64){
+func (b *pilipili) sendFlvHeart(length int64) {
 	/*
-	//番剧的POST心跳包 https://api.bilibili.com/x/report/web/heartbeat
-	type:4 //未知 (默认4)
-	sub_type:1 //未知,暂时可以固定为1 (默认1)
-	epid:183836 //番剧id (必填)
-	aid:18221694 //视频id (必填)
-	cid:29749244 //弹幕id (必填)
-	sid:21603 //某个id (ssId必填)
-	played_time:636 //当前视频的相对播放时间 (0开始,每次+15)
-	start_ts:1519443810 //第一次请求心跳包的时间戳 (必填)
-	realTime:29 //真实播放的时间,两个包相差也是15s (0开始,每次+15)
-	csrf:b5d2b419cb964512e9ce423acabef2c0 //cookie里的bili_jct (默认为空)
-	play_type:0 //未知 (默认0)
-	mid:768525 //用户id... (默认为0)
+		//番剧的POST心跳包 https://api.bilibili.com/x/report/web/heartbeat
+		type:4 //未知 (默认4)
+		sub_type:1 //未知,暂时可以固定为1 (默认1)
+		epid:183836 //番剧id (必填)
+		aid:18221694 //视频id (必填)
+		cid:29749244 //弹幕id (必填)
+		sid:21603 //某个id (ssId必填)
+		played_time:636 //当前视频的相对播放时间 (0开始,每次+15)
+		start_ts:1519443810 //第一次请求心跳包的时间戳 (必填)
+		realTime:29 //真实播放的时间,两个包相差也是15s (0开始,每次+15)
+		csrf:b5d2b419cb964512e9ce423acabef2c0 //cookie里的bili_jct (默认为空)
+		play_type:0 //未知 (默认0)
+		mid:768525 //用户id... (默认为0)
 
-	//普通视频的POST心跳包 https://api.bilibili.com/x/report/web/heartbeat
-	play_type:0 //未知 0 1 都有 (默认0)
-	type:3 //未知 (默认3)
-	mid:768525 //用户id...(默认0)
-	cid:32253539 //同上 (必填)
-	aid:19780254 //同上 (必填)
-	start_ts:1519443863 //同上 (必填)
-	csrf:b5d2b419cb964512e9ce423acabef2c0 //同上 (默认空)
-	played_time:240 //同上 (0开始,每次+15)
-	realTime:42 //同上 (0开始,每次+15)
+		//普通视频的POST心跳包 https://api.bilibili.com/x/report/web/heartbeat
+		play_type:0 //未知 0 1 都有 (默认0)
+		type:3 //未知 (默认3)
+		mid:768525 //用户id...(默认0)
+		cid:32253539 //同上 (必填)
+		aid:19780254 //同上 (必填)
+		start_ts:1519443863 //同上 (必填)
+		csrf:b5d2b419cb964512e9ce423acabef2c0 //同上 (默认空)
+		played_time:240 //同上 (0开始,每次+15)
+		realTime:42 //同上 (0开始,每次+15)
 	*/
-	last_url:="https://api.bilibili.com/x/report/web/heartbeat"
-	form:=map[string]string{}
-	if bangumi{
-		form=map[string]string{
-			"type":"4",
-			"sub_type":"1",
-			"epid":epid,
-			"aid":aid,
-			"cid":cid,
-			"sid":sid,
-			"played_time":"0",
-			"realTime":"0",
-			"start_ts": B_tostring(time.Now().Unix()),
-			"csrf":"",
-			"play_type":"0",
-			"mid":"0",
+	last_url := "https://api.bilibili.com/x/report/web/heartbeat"
+	form := map[string]string{}
+	if b.bangumi {
+		form = map[string]string{
+			"type":        "4",
+			"sub_type":    "1",
+			"epid":        b.epid,
+			"aid":         b.aid,
+			"cid":         b.cid,
+			"sid":         b.sid,
+			"played_time": "0",
+			"realTime":    "0",
+			"start_ts":    B_tostring(time.Now().Unix()),
+			"csrf":        "",
+			"play_type":   "0",
+			"mid":         "0",
 		}
-	}else{
-		form=map[string]string{
-		"play_type":"0",
-			"type":"3",
-			"aid":aid,
-			"cid":cid,
-			"played_time":"0",
-			"realTime":"0",
-			"start_ts": B_tostring(time.Now().Unix()),
-			"csrf":"",
-			"mid":"0",
+	} else {
+		form = map[string]string{
+			"play_type":   "0",
+			"type":        "3",
+			"aid":         b.aid,
+			"cid":         b.cid,
+			"played_time": "0",
+			"realTime":    "0",
+			"start_ts":    B_tostring(time.Now().Unix()),
+			"csrf":        "",
+			"mid":         "0",
 		}
 	}
-	var play_time int64 =0
-	var real_time int64 =0
-	for;;{
-		resp,_,_:=goreq.New().Post(last_url).ContentType("form").SendMapString(B_httpBuildQuery(form)).End()
+	var play_time int64 = 0
+	var real_time int64 = 0
+	for {
+		resp, _, _ := goreq.New().Post(last_url).ContentType("form").SendMapString(B_httpBuildQuery(form)).End()
 
-		log.Println("heart status code : ",resp.StatusCode)
+		log.Println("heart status code : ", resp.StatusCode)
 
-		time.Sleep(time.Second*heart_sleep)
-		play_time+=heart_sleep;
-		real_time+=heart_sleep;
-		form["played_time"]=B_tostring(play_time)
-		form["realTime"]=B_tostring(real_time)
+		time.Sleep(time.Second * heart_sleep)
+		play_time += heart_sleep
+		real_time += heart_sleep
+		form["played_time"] = B_tostring(play_time)
+		form["realTime"] = B_tostring(real_time)
 
-		if play_time>=length{
+		if play_time >= length {
 			break
 		}
 	}
 }
 
-func B_get_flvurl() (string, error) {
+func (b *pilipili) getFlvXml() ([]byte, error) {
 	/*  //V2版本的方法 sign错误
 	//base_url:="https://interface.bilibili.com/v2/playurl"
 	//app_key:="f3bb208b3d081dc8"
@@ -243,19 +271,19 @@ func B_get_flvurl() (string, error) {
 	*/
 
 	param := map[string]string{
-		"cid":     cid,
+		"cid":     b.cid,
 		"player":  "1",
 		"quality": "0",
 		"ts":      B_tostring(time.Now().Unix()),
 	}
 
-	referer_url = fmt.Sprintf("https://www.bilibili.com/video/%s/", av)
+	b.referer_url = fmt.Sprintf("https://www.bilibili.com/video/%s/", b.av)
 
 	app_bangumi_secret := "9b288147e5474dd2aa67085f716c560d"
 	app_normal_secret := "1c15888dc316e05a15fdd0a02ed6584f"
 
 	last_url := ""
-	if bangumi {
+	if b.bangumi {
 		base_url := "http://bangumi.bilibili.com/player/web_api/playurl"
 		param["module"] = "bangumi"
 		query, sign := B_EncodeSign(param, app_bangumi_secret)
@@ -271,7 +299,7 @@ func B_get_flvurl() (string, error) {
 		//goreq 库存在bug(提issues后,作者已修复)
 		resp,body,errs:=goreq.New().
 		SetHeader("Accept-Encoding","identity").
-		SetHeader("Host","interface.bilibili.com").
+		SetHeader("Host","interface.pilipili.com").
 		SetHeader("Referer",fmt.Sprintf("https://www.bilibili.com/video/%s/",av)).
 		SetHeader("User-Agent",user_agent).
 		SetHeader("Connection","close").
@@ -282,7 +310,7 @@ func B_get_flvurl() (string, error) {
 
 	req, _ := http.NewRequest("GET", last_url, nil)
 	req.Header.Add("Accept-Encoding", "identity")
-	req.Header.Add("Referer", referer_url)
+	req.Header.Add("Referer", b.referer_url)
 	req.Header.Add("User-Agent", user_agent)
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -298,17 +326,21 @@ func B_get_flvurl() (string, error) {
 
 	// log.Println(string(body))
 
-
-	return string(body), nil
+	return body, nil
 }
 
-func down_flv(rawxml string) error{
+func (b *pilipili) DownloadFlv() {
 
+	rawxml, err := b.getFlvXml()
+	if err != nil {
+		b.pili_err = err
+		return
+	}
 	xml_res := Xml_video_Res{}
-	err := xml.Unmarshal([]byte(rawxml), &xml_res)
+	err = xml.Unmarshal(rawxml, &xml_res)
 	if err != nil {
 		log.Println("视频 xml 解析错误")
-		return errors.New("视频 xml 解析错误")
+		b.pili_err = errors.New("视频 xml 解析错误")
 	}
 
 	/*
@@ -341,52 +373,72 @@ func down_flv(rawxml string) error{
 	//	}
 	//}()
 
+	//心跳包
+	go b.sendFlvHeart(xml_res.Timelength)
+
+	var down_count int32 = 0
 	//下载分段
 	for i, v := range order {
-		f, err := os.Create(fmt.Sprintf("%s_%d.flv",title,v))
+		var f *os.File
+		var err error
+		if len(order) == 1 {
+			f, err = os.Create(fmt.Sprintf("%s.flv", b.title))
+		} else {
+			f, err = os.Create(fmt.Sprintf("%s_%d.flv", b.title, v))
+		}
 		if err != nil {
 			log.Println("create error")
-			return errors.New("创建下载文件失败")
+			b.pili_err = errors.New("创建下载文件失败")
+			return
 		}
 		download := download_order[int64(v)].Url
-		log.Println("download url: ", download)
-		req, _ := http.NewRequest("GET", download, nil)
-		req.Header.Add("Referer", referer_url)
-		req.Header.Add("User-Agent", user_agent)
-		client := &http.Client{}
-		resp, err := client.Do(req)
-		if err != nil {
-			log.Println("download error")
-			return errors.New("下载错误")
+		download_func := func(download string,f *os.File) {
+			log.Println("download url: ", download)
+			req, _ := http.NewRequest("GET", download, nil)
+			req.Header.Add("Referer", b.referer_url)
+			req.Header.Add("User-Agent", user_agent)
+			client := &http.Client{}
+			resp, err := client.Do(req)
+			if err != nil {
+				log.Println("下载错误")
+			}
+			io.Copy(f, resp.Body)
+			f.Close()
+			atomic.AddInt32(&down_count, 1)
 		}
-		io.Copy(f, resp.Body)
-		f.Close()
+		//下载
+		go download_func(download,f)
 		continue
 
 		//todo 合并flv文件.
-		func(){
-			if i==0{
+
+		req, _ := http.NewRequest("GET", download, nil)
+		req.Header.Add("Referer", b.referer_url)
+		req.Header.Add("User-Agent", user_agent)
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		func() {
+			if i == 0 {
 				io.Copy(f, resp.Body)
-			}else{
+			} else {
 				defer resp.Body.Close()
 
-
-				flv_header:=make([]byte,9)
+				flv_header := make([]byte, 9)
 				//(前三个为FLV)(01表示版本)(05表示音频,视频都有)(09表示header长度)
 				//46 4C 56 01 05 00 00 00 09
 				//去掉 flv header
 				resp.Body.Read(flv_header)
 
 				//上一个tag的大小,4字节(包括tag_header)
-				flv_body_tag_size:=make([]byte,4)
+				flv_body_tag_size := make([]byte, 4)
 				//当前tag的类型,1字节 0x08音频tag 0x09视频tag 0x12脚本tag
-				flv_body_tag_type:=make([]byte,1)
+				flv_body_tag_type := make([]byte, 1)
 				//当前tag的长度,3字节
-				flv_body_tag_len:=make([]byte,3)
+				flv_body_tag_len := make([]byte, 3)
 				//当前tag的时间戳:3+1字节
-				flv_body_tag_ts:=make([]byte,4)
+				flv_body_tag_ts := make([]byte, 4)
 				//streamid,3字节 目前总是为0
-				flv_body_tag_stream:=make([]byte,3)
+				flv_body_tag_stream := make([]byte, 3)
 
 				resp.Body.Read(flv_body_tag_size)
 				resp.Body.Read(flv_body_tag_type)
@@ -395,7 +447,7 @@ func down_flv(rawxml string) error{
 				resp.Body.Read(flv_body_tag_stream)
 
 				//当前tag的数据
-				flv_body_tag_data:=make([]byte,Byte32Uint32(flv_body_tag_len,true))
+				flv_body_tag_data := make([]byte, Byte32Uint32(flv_body_tag_len, true))
 				resp.Body.Read(flv_body_tag_data)
 
 				//metadata里面通常为2个AMF包
@@ -418,23 +470,32 @@ func down_flv(rawxml string) error{
 			}
 		}()
 	}
-	return nil
+
+	for {
+		if atomic.LoadInt32(&down_count) == int32(len(order)) {
+			break
+		}
+		time.Sleep(time.Second)
+	}
 }
 
-func Init(url string)error{
+func (b *pilipili) Init(url string) *pilipili {
 	var err error
-	get_some_id(url)
+	b.getSomeId(url)
 	//通过av号获取cid
-	if aid == "" {
+	if b.aid == "" {
 		log.Println("获取aid失败")
-		return errors.New("获取aid失败")
+		b.pili_err = errors.New("获取aid失败")
+		return b
 	}
-	if cid == "" {
-		cid, err = B_get_cid()
+	if b.cid == "" {
+		b.cid, err = b.getCid()
 		if err != nil {
-			return err
+			log.Println(err.Error())
+			b.pili_err = err
+			return b
 		}
 	}
-	log.Println("aid: ", aid, " cid: ", cid)
-	return nil
+	log.Println("aid: ", b.aid, " cid: ", b.cid)
+	return b
 }

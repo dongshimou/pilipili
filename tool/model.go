@@ -61,4 +61,3 @@ type Xml_video_durl struct {
 type Xml_video_url struct {
 	Url string `xml:"url"`
 }
-

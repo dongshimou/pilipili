@@ -1,15 +1,15 @@
 package tool
 
 import (
-	"fmt"
-	"strings"
-	"sort"
+	"compress/flate"
+	"compress/gzip"
 	"crypto/md5"
 	"encoding/hex"
+	"fmt"
 	"io"
-	"compress/flate"
 	"io/ioutil"
-	"compress/gzip"
+	"sort"
+	"strings"
 )
 
 func B_tostring(v interface{}) string {
@@ -56,6 +56,7 @@ func B_Md5(formal string) string {
 	h.Write([]byte(formal))
 	return hex.EncodeToString(h.Sum(nil))
 }
+
 //deflate解压 Content-Encoding: deflate
 func B_flate_decode(in io.ReadCloser) ([]byte, error) {
 	reader := flate.NewReader(in)
@@ -77,7 +78,7 @@ func Byte42Uint32(data []byte, big_endian bool) uint32 {
 	var i uint32
 	if big_endian {
 		i = uint32(uint32(data[3]) + uint32(data[2])<<8 + uint32(data[1])<<16 + uint32(data[0])<<24)
-	}else{
+	} else {
 		i = uint32(uint32(data[0]) + uint32(data[1])<<8 + uint32(data[2])<<16 + uint32(data[3])<<24)
 	}
 	return i
@@ -87,7 +88,7 @@ func Byte32Uint32(data []byte, big_endian bool) uint32 {
 	var i uint32
 	if big_endian {
 		i = uint32(uint32(data[2]) + uint32(data[1])<<8 + uint32(data[0])<<16)
-	}else{
+	} else {
 		i = uint32(uint32(data[0]) + uint32(data[1])<<8 + uint32(data[2])<<16)
 	}
 	return i
