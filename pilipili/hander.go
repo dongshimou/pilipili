@@ -1,4 +1,4 @@
-package tool
+package pilipili
 
 import (
 	"encoding/json"
@@ -18,6 +18,12 @@ import (
 	"time"
 )
 
+type pili_vidio_part struct {
+	cid       string
+	page      int64
+	part_name string
+	dur       int64
+}
 type pilipili struct {
 	title       string
 	aid         string
@@ -29,6 +35,9 @@ type pilipili struct {
 	bangumi     bool
 	referer_url string
 	pili_err    error
+	file_name   string
+	vidio_index int
+	vidios      []pili_vidio_part
 }
 
 const (
@@ -36,11 +45,30 @@ const (
 	user_agent  = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.84 Safari/537.36"
 )
 
-func PiliPili() *pilipili {
+func New() *pilipili {
 	b := pilipili{}
 	b.bangumi = false
+	b.vidio_index = -1
 	b.pili_err = nil
 	return &b
+}
+func (b *pilipili) copy() *pilipili {
+	c := pilipili{
+		b.title,
+		b.aid,
+		b.cid,
+		b.sid,
+		b.av,
+		b.mid,
+		b.epid,
+		b.bangumi,
+		b.referer_url,
+		b.pili_err,
+		b.file_name,
+		b.vidio_index,
+		b.vidios,
+	}
+	return &c
 }
 func (b *pilipili) GetError() error {
 	return b.pili_err
@@ -71,11 +99,11 @@ func (b *pilipili) getSomeId(url string) {
 			log.Println(err.Error)
 			return
 		}
-		b.aid = B_tostring(epinfo.Aid)
+		b.aid = tostring(epinfo.Aid)
 		b.av = "av" + b.aid
-		b.cid = B_tostring(epinfo.Cid)
-		b.mid = B_tostring(epinfo.Mid)
-		b.epid = B_tostring(epinfo.EpId)
+		b.cid = tostring(epinfo.Cid)
+		b.mid = tostring(epinfo.Mid)
+		b.epid = tostring(epinfo.EpId)
 
 		//"ssId":21603
 		reg = regexp.MustCompile(`"ssId":[0-9]*`)
@@ -95,24 +123,34 @@ func (b *pilipili) getSomeId(url string) {
 	b.title = strings.TrimRight(b.title, `</title>`)
 
 }
-func (b *pilipili) getCid() (string, error) {
+func (b *pilipili) getCid() error {
 	getcid_url := "https://api.bilibili.com/x/player/pagelist"
 	last_url := B_build_url(getcid_url, map[string]string{
-		"aid": strings.Replace(b.aid, "av", "", -1),
+		"aid": b.aid,
 	})
 	res_body := Get_Cid_Res{}
 	resp, _, errs := goreq.New().Get(last_url).BindBody(&res_body).End()
 	if errs != nil {
-		return "", errors.New("https error")
+		return errors.New("https error")
 	}
 	if resp.StatusCode != http.StatusOK {
-		return "", errors.New("https status code is not equal 200")
+		return errors.New("https status code is not equal 200")
 	}
 	if res_body.Code != 0 {
-		return "", errors.New(res_body.Message)
+		return errors.New(res_body.Message)
 	}
-	log.Println(res_body.Data)
-	return B_tostring(res_body.Data[0].Cid), nil
+	if len(res_body.Data) == 0 {
+		return errors.New("未返回cid数据")
+	}
+	for _, v := range res_body.Data {
+		part := pili_vidio_part{}
+		part.cid = tostring(v.Cid)
+		part.dur = v.Duration
+		part.page = v.Page
+		part.part_name = v.Part
+		b.vidios = append(b.vidios, part)
+	}
+	return nil
 }
 
 //<d p="3.15700,1,25,16777215,1519036793,0,3c613191,4318544039">第一无误</d>
@@ -133,7 +171,7 @@ type Xml_danmaku_d struct {
 }
 
 func (b *pilipili) DownloadDanmaku() {
-	f, err := os.Create(fmt.Sprintf("%s.xml", b.title))
+	f, err := os.Create(fmt.Sprintf("%s.xml", b.file_name))
 	if err != nil {
 		log.Println("create error")
 		b.pili_err = errors.New("创建下载文件失败")
@@ -212,7 +250,7 @@ func (b *pilipili) sendFlvHeart(length int64) {
 			"sid":         b.sid,
 			"played_time": "0",
 			"realTime":    "0",
-			"start_ts":    B_tostring(time.Now().Unix()),
+			"start_ts":    tostring(time.Now().Unix()),
 			"csrf":        "",
 			"play_type":   "0",
 			"mid":         "0",
@@ -225,7 +263,7 @@ func (b *pilipili) sendFlvHeart(length int64) {
 			"cid":         b.cid,
 			"played_time": "0",
 			"realTime":    "0",
-			"start_ts":    B_tostring(time.Now().Unix()),
+			"start_ts":    tostring(time.Now().Unix()),
 			"csrf":        "",
 			"mid":         "0",
 		}
@@ -240,8 +278,8 @@ func (b *pilipili) sendFlvHeart(length int64) {
 		time.Sleep(time.Second * heart_sleep)
 		play_time += heart_sleep
 		real_time += heart_sleep
-		form["played_time"] = B_tostring(play_time)
-		form["realTime"] = B_tostring(real_time)
+		form["played_time"] = tostring(play_time)
+		form["realTime"] = tostring(real_time)
 
 		if play_time >= length {
 			break
@@ -274,7 +312,7 @@ func (b *pilipili) getFlvXml() ([]byte, error) {
 		"cid":     b.cid,
 		"player":  "1",
 		"quality": "0",
-		"ts":      B_tostring(time.Now().Unix()),
+		"ts":      tostring(time.Now().Unix()),
 	}
 
 	b.referer_url = fmt.Sprintf("https://www.bilibili.com/video/%s/", b.av)
@@ -341,6 +379,7 @@ func (b *pilipili) DownloadFlv() {
 	if err != nil {
 		log.Println("视频 xml 解析错误")
 		b.pili_err = errors.New("视频 xml 解析错误")
+		return
 	}
 
 	/*
@@ -373,26 +412,26 @@ func (b *pilipili) DownloadFlv() {
 	//	}
 	//}()
 
-	//心跳包
-	go b.sendFlvHeart(xml_res.Timelength)
+	//心跳包 毫秒->秒
+	go b.sendFlvHeart(xml_res.Timelength / 1000)
 
-	var down_count int32 = 0
+	var page_down_count int32 = 0
 	//下载分段
 	for i, v := range order {
 		var f *os.File
 		var err error
 		if len(order) == 1 {
-			f, err = os.Create(fmt.Sprintf("%s.flv", b.title))
+			f, err = os.Create(fmt.Sprintf("%s.flv", b.file_name))
 		} else {
-			f, err = os.Create(fmt.Sprintf("%s_%d.flv", b.title, v))
+			f, err = os.Create(fmt.Sprintf("%s_%d.flv", b.file_name, v))
 		}
 		if err != nil {
 			log.Println("create error")
 			b.pili_err = errors.New("创建下载文件失败")
 			return
 		}
-		download := download_order[int64(v)].Url
-		download_func := func(download string,f *os.File) {
+		url := download_order[int64(v)].Url
+		download_func := func(download string, ff *os.File) {
 			log.Println("download url: ", download)
 			req, _ := http.NewRequest("GET", download, nil)
 			req.Header.Add("Referer", b.referer_url)
@@ -402,17 +441,17 @@ func (b *pilipili) DownloadFlv() {
 			if err != nil {
 				log.Println("下载错误")
 			}
-			io.Copy(f, resp.Body)
-			f.Close()
-			atomic.AddInt32(&down_count, 1)
+			io.Copy(ff, resp.Body)
+			ff.Close()
+			atomic.AddInt32(&page_down_count, 1)
 		}
 		//下载
-		go download_func(download,f)
+		go download_func(url, f)
 		continue
 
 		//todo 合并flv文件.
 
-		req, _ := http.NewRequest("GET", download, nil)
+		req, _ := http.NewRequest("GET", url, nil)
 		req.Header.Add("Referer", b.referer_url)
 		req.Header.Add("User-Agent", user_agent)
 		client := &http.Client{}
@@ -472,7 +511,8 @@ func (b *pilipili) DownloadFlv() {
 	}
 
 	for {
-		if atomic.LoadInt32(&down_count) == int32(len(order)) {
+		if atomic.LoadInt32(&page_down_count) == int32(len(order)) {
+			log.Println("当前视频分段下载完成")
 			break
 		}
 		time.Sleep(time.Second)
@@ -489,13 +529,30 @@ func (b *pilipili) Init(url string) *pilipili {
 		return b
 	}
 	if b.cid == "" {
-		b.cid, err = b.getCid()
+		err = b.getCid()
 		if err != nil {
 			log.Println(err.Error())
 			b.pili_err = err
 			return b
 		}
+		b.vidio_index = 0
+		b.init_part()
 	}
-	log.Println("aid: ", b.aid, " cid: ", b.cid)
 	return b
+}
+func (b *pilipili) init_part() {
+	log.Println(" 初始化 分页 : ", b.vidio_index)
+	b.cid = b.vidios[b.vidio_index].cid
+	b.file_name = b.title + b.vidios[b.vidio_index].part_name
+	log.Println(" aid : ", b.aid, " cid : ", b.cid)
+}
+func (b *pilipili) NextPage() *pilipili {
+	c := b.copy()
+	c.vidio_index++
+	if c.vidio_index < len(c.vidios) {
+		c.init_part()
+		return c
+	} else {
+		return nil
+	}
 }

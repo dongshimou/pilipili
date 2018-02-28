@@ -1,4 +1,4 @@
-package tool
+package pilipili
 
 import (
 	"compress/flate"
@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-func B_tostring(v interface{}) string {
+func tostring(v interface{}) string {
 	return fmt.Sprintf("%v", v)
 }
 func B_build_url(base string, para map[string]string) string {

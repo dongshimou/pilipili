@@ -1,7 +1,7 @@
 package main
 
 import (
-	"./tool"
+	"./pilipili"
 	"log"
 	"os"
 	"sync/atomic"
@@ -10,15 +10,20 @@ import (
 
 func main() {
 
+	//url:="https://www.bilibili.com/video/av16239259/"
+
 	urls := os.Args[1:]
 	var down_count int32 = 0
 	for _, url := range urls {
 		down := func(url string) {
-			pili := tool.PiliPili()
+			pili := pilipili.New()
 			pili.Init(url)
 			if pili.GetError() == nil {
-				pili.DownloadDanmaku()
-				pili.DownloadFlv()
+				for pili != nil && pili.GetError() == nil {
+					pili.DownloadDanmaku()
+					pili.DownloadFlv()
+					pili = pili.NextPage()
+				}
 			} else {
 				log.Println(pili.GetError().Error())
 			}
