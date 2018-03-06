@@ -18,28 +18,6 @@ import (
 	"time"
 )
 
-type pili_vidio_part struct {
-	cid       string
-	page      int64
-	part_name string
-	dur       int64
-}
-type pilipili struct {
-	title       string
-	aid         string
-	cid         string
-	sid         string
-	av          string
-	mid         string
-	epid        string
-	bangumi     bool
-	referer_url string
-	pili_err    error
-	file_name   string
-	vidio_index int
-	vidios      []pili_vidio_part
-}
-
 const (
 	heart_sleep = 15
 	user_agent  = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.84 Safari/537.36"

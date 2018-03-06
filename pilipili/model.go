@@ -1,5 +1,27 @@
 package pilipili
 
+type pili_vidio_part struct {
+	cid       string
+	page      int64
+	part_name string
+	dur       int64
+}
+type pilipili struct {
+	title       string
+	aid         string
+	cid         string
+	sid         string
+	av          string
+	mid         string
+	epid        string
+	bangumi     bool
+	referer_url string
+	pili_err    error
+	file_name   string
+	vidio_index int
+	vidios      []pili_vidio_part
+}
+
 type Bangumi_epinfo struct {
 	Aid           int64  `json:"aid"`
 	Cid           int64  `json:"cid"`
