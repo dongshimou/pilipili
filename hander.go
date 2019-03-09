@@ -1,4 +1,4 @@
-package pilipili
+package main
 
 import (
 	"encoding/json"
@@ -23,11 +23,12 @@ const (
 	user_agent  = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.84 Safari/537.36"
 )
 
-func New() *pilipili {
+func New(url string) *pilipili {
 	b := pilipili{}
 	b.bangumi = false
 	b.vidio_index = -1
 	b.pili_err = nil
+	b.init(url)
 	return &b
 }
 func (b *pilipili) copy() *pilipili {
@@ -497,7 +498,7 @@ func (b *pilipili) DownloadFlv() {
 	}
 }
 
-func (b *pilipili) Init(url string) *pilipili {
+func (b *pilipili) init(url string) *pilipili {
 	var err error
 	b.getSomeId(url)
 	//通过av号获取cid

@@ -1,4 +1,4 @@
-package pilipili
+package main
 
 import (
 	"compress/flate"

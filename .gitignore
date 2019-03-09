@@ -15,3 +15,4 @@
 .glide/
 *.flv
 *.xml
+go.sum

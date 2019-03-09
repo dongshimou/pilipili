@@ -1,4 +1,4 @@
-package pilipili
+package main
 
 type pili_vidio_part struct {
 	cid       string
