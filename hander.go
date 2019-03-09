@@ -1,4 +1,4 @@
-package main
+package pilipili
 
 import (
 	"encoding/json"
@@ -71,7 +71,7 @@ func (b *pilipili) getSomeId(url string) {
 		// log.Println(string(result))
 		//去掉 "epInfo": 9个
 		result = result[9:]
-		epinfo := Bangumi_epinfo{}
+		epinfo := piliBangumiEpInfo{}
 		err = json.Unmarshal(result, &epinfo)
 		// log.Println(epinfo)
 		if err != nil {
@@ -104,10 +104,10 @@ func (b *pilipili) getSomeId(url string) {
 }
 func (b *pilipili) getCid() error {
 	getcid_url := "https://api.bilibili.com/x/player/pagelist"
-	last_url := B_build_url(getcid_url, map[string]string{
+	last_url := piliBuildUrl(getcid_url, map[string]string{
 		"aid": b.aid,
 	})
-	res_body := Get_Cid_Res{}
+	res_body := piliGetCidRes{}
 	resp, _, errs := goreq.New().Get(last_url).BindBody(&res_body).End()
 	if errs != nil {
 		return errors.New("https error")
@@ -122,7 +122,7 @@ func (b *pilipili) getCid() error {
 		return errors.New("未返回cid数据")
 	}
 	for _, v := range res_body.Data {
-		part := pili_vidio_part{}
+		part := piliVidioPart{}
 		part.cid = tostring(v.Cid)
 		part.dur = v.Duration
 		part.page = v.Page
@@ -177,7 +177,7 @@ func (b *pilipili) getDanmaku() ([]byte, error) {
 		return nil, errors.New("https status code is not equal 200")
 	}
 	// Content-Encoding: deflate
-	res, err := B_flate_decode(resp.Body)
+	res, err := piliFlateDecode(resp.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -250,7 +250,7 @@ func (b *pilipili) sendFlvHeart(length int64) {
 	var play_time int64 = 0
 	var real_time int64 = 0
 	for {
-		resp, _, _ := goreq.New().Post(last_url).ContentType("form").SendMapString(B_httpBuildQuery(form)).End()
+		resp, _, _ := goreq.New().Post(last_url).ContentType("form").SendMapString(piliBuildQuery(form)).End()
 
 		log.Println("heart status code : ", resp.StatusCode)
 
@@ -303,11 +303,11 @@ func (b *pilipili) getFlvXml() ([]byte, error) {
 	if b.bangumi {
 		base_url := "http://bangumi.bilibili.com/player/web_api/playurl"
 		param["module"] = "bangumi"
-		query, sign := B_EncodeSign(param, app_bangumi_secret)
+		query, sign := piliEncodeSign(param, app_bangumi_secret)
 		last_url = base_url + "?" + query + "&sign=" + sign
 	} else {
 		base_url := "http://interface.bilibili.com/playurl"
-		query, sign := B_EncodeSign(param, app_normal_secret)
+		query, sign := piliEncodeSign(param, app_normal_secret)
 		last_url = base_url + "?" + query + "&sign=" + sign
 	}
 	log.Println("last url: ", last_url)
@@ -353,7 +353,7 @@ func (b *pilipili) DownloadFlv() {
 		b.pili_err = err
 		return
 	}
-	xml_res := Xml_video_Res{}
+	xml_res := piliXmlVideoRes{}
 	err = xml.Unmarshal(rawxml, &xml_res)
 	if err != nil {
 		log.Println("视频 xml 解析错误")
@@ -369,7 +369,7 @@ func (b *pilipili) DownloadFlv() {
 		download="http://upos-hz-mirrorkodo.acgvideo.com/upgcxcode/39/35/32253539/32253539-1-64.flv?e=ig8g5X10ugNcXBlqNxHxNEVE5XREto8KqJZHUa6m5J0SqE85tZvEuENvNC8xNEVE9EKE9IMvXBvE2ENvNCImNEVEK9GVqJIwqa80WXIekXRE9IMvXBvEuENvNCImNEVEua6m2jIxux0CkF6s2JZv5x0DQJZY2F8SkXKE9IB5to8euxZM2rNcNbUVhwdVhoM1hwdVhwdVNCM%3D&platform=pc&uipk=5&uipv=5&deadline=1519383359&gen=playurl&um_deadline=1519383359&rate=0&um_sign=30d0e864f9f0072c029831a475d46529&dynamic=1&os=kodo&oi=3030949926&upsig=d4d0701dcb7704638aec8f7edfcd13e5"
 	*/
 
-	download_order := map[int64]*Xml_video_durl{}
+	download_order := map[int64]*piliXmlVideoDurl{}
 	order := []int{}
 	for i, _ := range xml_res.Durl {
 		order = append(order, int(xml_res.Durl[i].Order))
@@ -465,7 +465,7 @@ func (b *pilipili) DownloadFlv() {
 				resp.Body.Read(flv_body_tag_stream)
 
 				//当前tag的数据
-				flv_body_tag_data := make([]byte, Byte32Uint32(flv_body_tag_len, true))
+				flv_body_tag_data := make([]byte, piliByte3ToUint32(flv_body_tag_len, true))
 				resp.Body.Read(flv_body_tag_data)
 
 				//metadata里面通常为2个AMF包

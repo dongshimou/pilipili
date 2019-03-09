@@ -1,4 +1,4 @@
-package main
+package pilipili
 
 import (
 	"compress/flate"
@@ -15,7 +15,7 @@ import (
 func tostring(v interface{}) string {
 	return fmt.Sprintf("%v", v)
 }
-func B_build_url(base string, para map[string]string) string {
+func piliBuildUrl(base string, para map[string]string) string {
 	res := base
 	res += "?"
 	for k, v := range para {
@@ -29,7 +29,7 @@ func B_build_url(base string, para map[string]string) string {
 }
 
 //https://interface.bilibili.com/v2/playurl?cid=32253539&appkey=84956560bc028eb7&otype=json&type=&quality=0&qn=0&sign=0d1b3ad4dd857c060d28a31a05d13835
-func B_httpBuildQuery(params map[string]string) string {
+func piliBuildQuery(params map[string]string) string {
 	list := make([]string, 0, len(params))
 	buffer := make([]string, 0, len(params))
 	for key := range params {
@@ -46,26 +46,26 @@ func B_httpBuildQuery(params map[string]string) string {
 	buffer = buffer[:len(buffer)-1]
 	return strings.Join(buffer, "")
 }
-func B_EncodeSign(params map[string]string, secret string) (string, string) {
-	queryString := B_httpBuildQuery(params)
-	return queryString, B_Md5(queryString + secret)
+func piliEncodeSign(params map[string]string, secret string) (string, string) {
+	queryString := piliBuildQuery(params)
+	return queryString, piliMd5(queryString + secret)
 }
 
-func B_Md5(formal string) string {
+func piliMd5(formal string) string {
 	h := md5.New()
 	h.Write([]byte(formal))
 	return hex.EncodeToString(h.Sum(nil))
 }
 
 //deflate解压 Content-Encoding: deflate
-func B_flate_decode(in io.ReadCloser) ([]byte, error) {
+func piliFlateDecode(in io.ReadCloser) ([]byte, error) {
 	reader := flate.NewReader(in)
 	defer reader.Close()
 	return ioutil.ReadAll(reader)
 }
 
 //gzip解压 Content-Encoding: Gzip
-func B_Gzip_decode(in io.ReadCloser) ([]byte, error) {
+func piliGzipDecode(in io.ReadCloser) ([]byte, error) {
 	reader, err := gzip.NewReader(in)
 	if err != nil {
 		return nil, err
@@ -74,7 +74,7 @@ func B_Gzip_decode(in io.ReadCloser) ([]byte, error) {
 	return ioutil.ReadAll(reader)
 }
 
-func Byte42Uint32(data []byte, big_endian bool) uint32 {
+func piliByte4ToUint32(data []byte, big_endian bool) uint32 {
 	var i uint32
 	if big_endian {
 		i = uint32(uint32(data[3]) + uint32(data[2])<<8 + uint32(data[1])<<16 + uint32(data[0])<<24)
@@ -84,7 +84,7 @@ func Byte42Uint32(data []byte, big_endian bool) uint32 {
 	return i
 }
 
-func Byte32Uint32(data []byte, big_endian bool) uint32 {
+func piliByte3ToUint32(data []byte, big_endian bool) uint32 {
 	var i uint32
 	if big_endian {
 		i = uint32(uint32(data[2]) + uint32(data[1])<<8 + uint32(data[0])<<16)
